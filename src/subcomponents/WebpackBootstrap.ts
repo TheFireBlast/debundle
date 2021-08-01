@@ -1,12 +1,19 @@
-const escope = require("escope");
+import * as escope from "escope";
+import * as ESTraverse from "estraverse";
+import * as ESTree from "estree";
+import type {} from "./estree-override";
 
-class WebpackBootstrapNotFoundError extends Error {}
-class WebpackBootstrapModuleCallExpressionNotFoundError extends Error {}
+export class WebpackBootstrapNotFoundError extends Error {}
+export class WebpackBootstrapModuleCallExpressionNotFoundError extends Error {}
 
-class WebpackBootstrap {
-    constructor(ast, moduleCallExpression) {
+export class WebpackBootstrap {
+    ast: any;
+    scopeManager: any;
+    _moduleCallExpression: any;
+    publicPath: any;
+    constructor(ast:ESTree.FunctionExpression, moduleCallExpression) {
         this.ast = ast;
-        this.scopeManager = escope.analyze(this.ast);
+        this.scopeManager = escope.analyze(this.ast, null);
 
         this._moduleCallExpression = moduleCallExpression;
 
@@ -114,5 +121,3 @@ class WebpackBootstrap {
         };
     }
 }
-
-module.exports = WebpackBootstrap;

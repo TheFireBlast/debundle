@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-const Bundle = require("./subcomponents/Bundle");
-const Chunk = require("./subcomponents/Chunk");
-const Module = require("./subcomponents/Module");
-const WebpackBootstrap = require("./subcomponents/WebpackBootstrap");
+import { Bundle } from "./subcomponents/Bundle";
+import { Chunk } from "./subcomponents/Chunk";
+import { Module } from "./subcomponents/Module";
+import { WebpackBootstrap } from "./subcomponents/WebpackBootstrap";
 
 module.exports = Bundle;
 module.exports.Bundle = Bundle;
@@ -12,10 +12,11 @@ module.exports.WebpackBootstrap = WebpackBootstrap;
 
 // The rest of the program only runs if the script was executed directly.
 if (require.main !== module) {
+    //@ts-ignore
     return;
 }
 
-const program = require("commander");
+import program from "commander";
 
 let bundlePath;
 program

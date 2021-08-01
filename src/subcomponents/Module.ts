@@ -1,20 +1,40 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
 
-const escope = require("escope");
-const estraverse = require("estraverse");
-const escodegen = require("escodegen");
-const chalk = require("chalk");
-const mkdirp = require("mkdirp");
+import * as escope from "escope";
+import estraverse from "estraverse";
+import escodegen from "escodegen";
+import chalk from "chalk";
+import mkdirp from "mkdirp";
+import acorn from "acorn";
+import * as ESTree from "estree";
+import type {} from "./estree-override";
 
-const { cloneAst, highlight } = require("../utils");
-const { DEFAULT_CHUNK } = require("../settings");
+import { cloneAst, highlight } from "../utils";
+import { DEFAULT_CHUNK } from "../settings";
+import { Bundle } from "./Bundle";
+import { Chunk } from "./Chunk";
 
 // Thrown when a require function is encountered with multiple arguments
-class RequireFunctionHasMultipleArgumentsError extends Error {}
+export class RequireFunctionHasMultipleArgumentsError extends Error {}
 
-class Module {
-    constructor(chunk, moduleId, ast) {
+export class Module {
+    chunk: Chunk;
+    bundle: Bundle;
+    id: number;
+    ast: ESTree.FunctionExpression;
+    mappings: Set<[path: string, name: string]>;
+    _packageName: string;
+    metadataFileConfig: any;
+    _defaultPath: string;
+    path: string;
+    comment: string;
+    scopeManager: any;
+    _dependencyModuleIds: ReturnType<Module["_findAllRequireFunctionCalls"]>;
+
+    importName: string;
+    importPath: string;
+    constructor(chunk: Chunk, moduleId: number, ast: ESTree.FunctionExpression) {
         this.chunk = chunk;
         this.bundle = this.chunk.bundle;
 
@@ -30,7 +50,7 @@ class Module {
         this.path = this.metadataFileConfig.path || this._defaultPath;
         this.comment = null;
 
-        this.scopeManager = escope.analyze(this.ast);
+        this.scopeManager = escope.analyze(this.ast, null);
 
         // Find all referenced to `require(...)` in the module, and figure out which modules are being
         // required
@@ -77,7 +97,7 @@ class Module {
     // Get a reference to require, module, or exports defined in the module closure
     _getModuleClosureVariable(varname) {
         const index = this.bundle.moduleClosureParamMetadata().paramIndexes.indexOf(varname);
-        const node = this.ast.params[index];
+        const node = this.ast.params[index] as ESTree.Identifier;
         if (!node) {
             return null;
         }
@@ -104,41 +124,44 @@ class Module {
         const originalAst = cloneAst(this.ast);
 
         if (opts.renameVariables) {
-            var getVariable = (declarator) => {
+            var getVariable = (declarator: ESTree.VariableDeclarator) => {
                 var scope = this.scopeManager.acquire(declarator);
                 if (!scope) {
-                    var body = declarator;
+                    var body: any = declarator;
                     while (!body.type.includes("Function")) {
                         body = body._parent;
                     }
                     scope = this.scopeManager.acquire(body);
                 }
-                return scope && scope.variables.find((v) => v.name === declarator.id.name);
+                return scope && scope.variables.find((v) => v.name === (declarator.id as ESTree.Identifier).name);
             };
-            var renameDeclarator = (declarator, name) => {
-                if (declarator.id.name == name) return;
+            var renameDeclarator = (declarator: ESTree.VariableDeclarator, name: string) => {
+                if (declarator.id.type != "Identifier" || declarator.id.name == name) return;
                 var variable = getVariable(declarator);
                 if (variable) return this.renameVariable(variable, name);
                 console.error("Failed to rename %s to %s (%d)", declarator.id.name, name, this.path);
             };
 
-            for (var mapping of this.mappings) {
-                var dec = this.ast.body;
-                var varpath = mapping[0].split(".").map((n) => (isNaN(n) ? n : +n));
-                for (var n of varpath) dec = dec[n];
+            // Remap variable names
+            for (let mapping of this.mappings) {
+                let dec: any = this.ast.body;
+                let varpath = mapping[0].split(".").map((n) => (isNaN(+n) ? n : +n));
+                for (let n of varpath) dec = dec[n];
                 renameDeclarator(dec, mapping[1]);
             }
 
             if (this.requireVariable) {
                 // Rename import utils
-                var importUtilsDeclaration = this.ast.body.body[1];
+                let importUtilsDeclaration = this.ast.body.body[1];
                 if (importUtilsDeclaration && importUtilsDeclaration.type == "VariableDeclaration") {
-                    for (var dec of importUtilsDeclaration.declarations) {
+                    for (let dec of importUtilsDeclaration.declarations) {
                         if (
                             dec.init &&
                             dec.init.type == "LogicalExpression" &&
                             dec.init.left.type == "LogicalExpression" &&
-                            dec.init.left.left.type == "ThisExpression"
+                            dec.init.left.left.type == "ThisExpression" &&
+                            dec.init.left.right.type == "MemberExpression" &&
+                            dec.init.left.right.property.type == "Identifier"
                         ) {
                             renameDeclarator(dec, dec.init.left.right.property.name);
                         }
@@ -152,7 +175,7 @@ class Module {
                     const requiredModulePath = requiredModule.absolutePath;
 
                     // Rename import variables
-                    var debug = false;
+                    let debug = false;
                     if (requiredModule.importName) {
                         let node = call.ast._parent._parent;
                         if (node.type == "AssignmentExpression") {
@@ -349,7 +372,12 @@ class Module {
 
     // Returns an array of objects of {type, chunkId, moduleId, ast}, retreived by parting the AST and
     // determining all the times that the `require` or `require.ensure` functions were invoked.
-    _findAllRequireFunctionCalls() {
+    _findAllRequireFunctionCalls(): {
+        type: "REQUIRE_FUNCTION" | "REQUIRE_ENSURE" | "REQUIRE_T";
+        chunkId: string;
+        moduleId: number;
+        ast: ESTree.Literal;
+    }[] {
         const requireFunctionVariable = this.requireVariable;
 
         // If no require function is defined in the module, then it cannot have any dependencies

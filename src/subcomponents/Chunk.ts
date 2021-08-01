@@ -1,18 +1,26 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
 
-const acorn = require("acorn");
-const estraverse = require("estraverse");
+import acorn from "acorn";
+import estraverse from "estraverse";
+import * as ESTree from "estree";
+import type {} from "./estree-override";
 
-const request = require("sync-request");
+import request from "sync-request";
 
-const Module = require("./Module");
+import type { Bundle, BundleMetadata } from "./Bundle";
+import { Module } from "./Module";
 
-const { parseBundleModules } = require("../utils");
-const { DEFAULT_CHUNK } = require("../settings");
+import { parseBundleModules } from "../utils";
+import { DEFAULT_CHUNK } from "../settings";
 
-class Chunk {
-    constructor(bundle, fileName, bundleModules = null) {
+export class Chunk {
+    bundle: Bundle;
+    fileName: string;
+    ids: string[];
+    ast: ESTree.Node;
+    modules: Map<number, Module>;
+    constructor(bundle: Bundle, fileName: string, bundleModules?:any) {
         this.bundle = bundle;
 
         this.fileName = fileName;
@@ -43,6 +51,7 @@ class Chunk {
                 chunkContents = response.body;
             }
             this.bundle.log(`      read successfully!`);
+            //@ts-ignore
             this.ast = acorn.parse(chunkContents, {});
 
             // Add `_parent` property to every node, so that the parent can be
@@ -63,13 +72,16 @@ class Chunk {
                         node.type === "ArrayExpression" &&
                         node.elements.length > 0 &&
                         node.elements.every((n) => n.type === "Literal") &&
-                        node.elements.map((n) => n.value);
+                        node.elements.map((n) => (n as ESTree.Literal).value);
 
                     if (!chunkIdArray) {
                         return;
                     }
 
-                    const parentElements = parent && parent.type === "CallExpression" ? parent.arguments : parent.elements;
+                    const parentElements =
+                        parent && parent.type === "CallExpression"
+                            ? parent.arguments
+                            : (parent as ESTree.ArrayExpression).elements;
                     const moduleListAst =
                         parentElements &&
                         parentElements.length >= 2 &&
@@ -123,5 +135,3 @@ class Chunk {
         return path.join(path.dirname(this.bundle.path), this.fileName);
     }
 }
-
-module.exports = Chunk;

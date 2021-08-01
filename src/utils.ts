@@ -1,11 +1,20 @@
-const acorn = require("acorn");
-const escodegen = require("escodegen");
+import acorn from "acorn";
+import escodegen from "escodegen";
+import type { Bundle } from "./subcomponents/Bundle";
+import * as ESTree from "estree";
 
 const cliHighlight = require("cli-highlight").highlight;
-exports.highlight = (code) => cliHighlight(code, { language: "javascript", ignoreIllegals: true });
+export function highlight(code: string) {
+    cliHighlight(code, {
+        language: "javascript",
+        ignoreIllegals: true,
+        theme: { "title.function": "red" },
+    });
+}
 
-exports.ExtendedError = class ExtendedError extends Error {
-    constructor(name, message, ...args /*, context */) {
+export class ExtendedError extends Error {
+    context: any;
+    constructor(name: string, message: string, ...args: any[] /*, context */) {
         let context = {};
         if (typeof args[args.length - 1] !== "string") {
             context = args.pop();
@@ -15,17 +24,20 @@ exports.ExtendedError = class ExtendedError extends Error {
         this.name = name;
         this.context = context;
     }
-};
+}
 
-exports.cloneAst = (ast) => {
+export function cloneAst(ast: ESTree.Node) {
+    //@ts-ignore
     return acorn.parse("var a = " + escodegen.generate(ast), {}).body[0].declarations[0].init;
-};
+}
 
-exports.parseBundleModules = function parseBundleModules(node, bundle, isChunk = false) {
+export function parseBundleModules(node: ESTree.Node, bundle: Bundle, isChunk = false) {
     if (node.type === "ObjectExpression") {
         // Object
         return node.properties.map((property) => {
+            //@ts-ignore
             const key = typeof property.key.value !== "undefined" ? property.key.value : property.key.name;
+            //@ts-ignore
             return [key, property.value];
         });
     } else if (node.type === "ArrayExpression") {
@@ -43,4 +55,4 @@ exports.parseBundleModules = function parseBundleModules(node, bundle, isChunk =
             { foo: true }
         );
     }
-};
+}
