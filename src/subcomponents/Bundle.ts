@@ -63,7 +63,8 @@ export class Bundle {
             this.path = path.join(cwd, this.path);
         }
 
-        this.metadataFilePath = path.join(path.dirname(this.path), path.basename(this.path) + ".info");
+        var parsedPath = path.parse(this.path);
+        this.metadataFilePath = path.join(path.dirname(this.path), parsedPath.name + ".debundle" + parsedPath.ext);
         this.metadataFileContents = {};
 
         this.chunks = new Map();
