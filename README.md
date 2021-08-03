@@ -139,7 +139,7 @@ $ cat createreactapp.js.info
 module.exports = {
   "version": 1,
   "options": {
-    "distPath": "./my-cool-dist",
+    "outPath": "./my-cool-dist",
     // There are more, take a look at "settings.js" for the default list that is merged with this
   },
 

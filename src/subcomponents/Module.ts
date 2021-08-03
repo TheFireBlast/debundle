@@ -2,11 +2,9 @@ import fs from "fs";
 import path from "path";
 
 import * as escope from "escope";
-import estraverse from "estraverse";
-import escodegen from "escodegen";
+import * as estraverse from "estraverse";
+import { generate } from "./astring-jsx";
 import chalk from "chalk";
-import mkdirp from "mkdirp";
-import acorn from "acorn";
 import * as ESTree from "estree";
 import type {} from "./estree-override";
 
@@ -14,6 +12,7 @@ import { cloneAst, highlight } from "../utils";
 import { DEFAULT_CHUNK } from "../settings";
 import { Bundle } from "./Bundle";
 import { Chunk } from "./Chunk";
+import { JSXVisitor } from "./JSXVisitor";
 
 // Thrown when a require function is encountered with multiple arguments
 export class RequireFunctionHasMultipleArgumentsError extends Error {}
@@ -52,8 +51,8 @@ export class Module {
 
         this.scopeManager = escope.analyze(this.ast, null);
 
-        // Find all referenced to `require(...)` in the module, and figure out which modules are being
-        // required
+        // Find all references to `require(...)` in the module,
+        // and figure out which modules are being required
         this._dependencyModuleIds = this._findAllRequireFunctionCalls();
 
         const dependencyModuleIdsRaw = this._dependencyModuleIds.filter((i) => i.moduleId).map((i) => i.moduleId);
@@ -91,11 +90,11 @@ export class Module {
     }
 
     get absolutePath() {
-        return path.join(this.bundle.distPath, this.path);
+        return path.join(this.bundle.outPath, this.path);
     }
 
     // Get a reference to require, module, or exports defined in the module closure
-    _getModuleClosureVariable(varname) {
+    _getModuleClosureVariable(varname: string) {
         const index = this.bundle.moduleClosureParamMetadata().paramIndexes.indexOf(varname);
         const node = this.ast.params[index] as ESTree.Identifier;
         if (!node) {
@@ -151,9 +150,10 @@ export class Module {
             }
 
             if (this.requireVariable) {
-                // Rename import utils
+                // Rename import utils (__setModuleDefault, __importStar, ...)
                 let importUtilsDeclaration = this.ast.body.body[1];
                 if (importUtilsDeclaration && importUtilsDeclaration.type == "VariableDeclaration") {
+                    var isUtils = false;
                     for (let dec of importUtilsDeclaration.declarations) {
                         if (
                             dec.init &&
@@ -164,15 +164,22 @@ export class Module {
                             dec.init.left.right.property.type == "Identifier"
                         ) {
                             renameDeclarator(dec, dec.init.left.right.property.name);
+                            isUtils = true;
                         }
+                    }
+                    if (isUtils) {
+                        this.ast.body.body[1] = {
+                            //@ts-ignore
+                            type: "Literal",
+                            value: "Import Utils",
+                            _parent: this.ast.body,
+                        };
                     }
                 }
                 // Adjust all require calls to contain the path to the module that is desired
                 this._findAllRequireFunctionCalls().forEach((call) => {
                     const requiredModule = this.bundle.modules.get(call.moduleId);
                     if (!requiredModule) return;
-
-                    const requiredModulePath = requiredModule.absolutePath;
 
                     // Rename import variables
                     let debug = false;
@@ -197,107 +204,24 @@ export class Module {
                         } else if (debug) console.log("assignment =", node);
                     }
 
+                    // Determine the require path that must be used to access the module requested from
+                    // the current module.
+                    call.ast.value = "./" + path.relative(path.dirname(this.absolutePath), requiredModule.absolutePath).replace(/\\/g, "/");
+                    if (call.ast.value.startsWith("./node_modules")) {
+                        call.ast.value =
+                            requiredModule.importPath || call.ast.value.replace("./node_modules/", "").replace(/(\/index)?\.js$/, "");
+                    }
+                    call.ast.raw = JSON.stringify(call.ast.value);
+
                     // JSX Transform
                     //TODO: support React.createElement
                     //TODO: rename file extension to .jsx
                     //TODO: third argument
-                    if (this.id == 646 && requiredModule.id === this.bundle.jsx) {
+                    if (requiredModule.id === this.bundle.jsx) {
                         let node = call.ast._parent._parent;
                         if (node.type == "VariableDeclarator") {
-                            var v = getVariable(node);
-                            var traversed = new Set();
-                            function isJsxCall(node) {
-                                return (
-                                    node.type == "CallExpression" &&
-                                    node.callee.type == "MemberExpression" &&
-                                    node.callee.property.type == "Identifier" &&
-                                    node.callee.property.name == "jsx"
-                                );
-                            }
-                            //TODO: use estraverse
-                            function jsxTraverse(jsxcall, getstr = false) {
-                                traversed.add(jsxcall);
-                                // console.log(ref._parent._parent);
-                                let args = jsxcall.arguments;
-                                let name = "";
-                                if (args[0].type == "Literal") {
-                                    name = args[0].value;
-                                } else {
-                                    name = escodegen.generate(args[0]);
-                                }
-                                let children;
-                                let props = [];
-                                if (
-                                    args[1].type == "CallExpression" &&
-                                    args[1].callee.type == "Identifier" &&
-                                    args[1].callee.name == "__assign"
-                                ) {
-                                    let result = { type: "ObjectExpression", properties: [] };
-                                    let _props = new Map();
-                                    for (let obj of args[1].arguments) {
-                                        for (let obj_prop of obj.properties) {
-                                            if (isJsxCall(obj_prop.value)) jsxTraverse(obj_prop.value);
-                                            _props.set(obj_prop.key.name, obj_prop);
-                                        }
-                                    }
-                                    for (let p of _props.values()) {
-                                        result.properties.push(p);
-                                    }
-                                    args[1] = result; //TODO: improve
-                                }
-                                if (args[1].type == "ObjectExpression") {
-                                    let childrenProp = args[1].properties.find((p) => p.key.name == "children");
-                                    if (childrenProp && childrenProp.value.type == "CallExpression") {
-                                        children = jsxTraverse(childrenProp.value, true);
-                                    }
-
-                                    for (let p of args[1].properties) {
-                                        if (p.key.name == "children") continue;
-                                        //TODO: use estraverse
-                                        if (isJsxCall(p.value)) {
-                                            props.push(p.key.name + "={" + jsxTraverse(p.value, true) + "}");
-                                        } else props.push(p.key.name + "=" + escodegen.generate(p.value));
-                                        // console.log('prop: %s', p.key.name)
-                                    }
-                                }
-                                let str;
-                                if (children) str = `<${name} ${props.join(" ")}>\n${children.replace(/^/g, "   ")}\n</${name}>`;
-                                else str = `<${name} ${props.join(" ")}/>`;
-                                if (getstr) return str;
-                                let replacement = {
-                                    type: "Identifier",
-                                    name: str,
-                                    _parent: jsxcall._parent,
-                                };
-                                return replacement;
-                            }
-                            for (let ref of v.references) {
-                                ref = ref.identifier;
-                                if (
-                                    ref._parent &&
-                                    ref._parent.type == "MemberExpression" &&
-                                    ref._parent.property.type == "Identifier" &&
-                                    ref._parent.property.name == "jsx" &&
-                                    ref._parent._parent.type == "CallExpression"
-                                ) {
-                                    let call = ref._parent._parent;
-                                    if (traversed.has(call)) continue;
-                                    ref._parent._parent.type = "Identifier";
-                                    ref._parent._parent.name = jsxTraverse(call, true);
-                                    console.log("traversed", ref._parent._parent);
-                                }
-                            }
-                            // console.log(v.references[1].identifier);
-                            // process.exit();
+                            estraverse.replace(this.ast, JSXVisitor);
                         }
-                    }
-
-                    // Determine the require path that must be used to access the module requested from
-                    // the current module.
-                    call.ast.value = "./" + path.relative(path.dirname(this.absolutePath), requiredModulePath).replace(/\\/g, "/");
-                    if (call.ast.value.startsWith("./node_modules")) {
-                        call.ast.value =
-                            requiredModule.importPath || call.ast.value.replace("./node_modules/", "").replace(/(\/index)?\.js$/, "");
                     }
                 });
 
@@ -339,11 +263,11 @@ export class Module {
         const newAst = this.ast;
         this.ast = originalAst;
 
-        let code;
+        let code: string;
         if (opts.removeClosure) {
-            code = newAst.body.body.map((e) => escodegen.generate(e)).join("\n");
+            code = newAst.body.body.map((e) => generate(e)).join("\n");
         } else {
-            code = escodegen.generate(newAst);
+            code = generate(newAst);
         }
 
         // Add comment to beginning of code, if it is defined.
@@ -355,12 +279,13 @@ export class Module {
     }
 
     // Rename a variable in the module to be a different name
-    renameVariable(variable, newName) {
+    //TODO: add typings for `escope` classes
+    renameVariable(variable, newName: string) {
         variable.name = newName;
 
-        // Rename all instances of the variabl
-        variable.identifiers.forEach((ident) => {
-            ident.name = newName;
+        // Rename all instances of the variable
+        variable.identifiers.forEach((identifier) => {
+            identifier.name = newName;
         });
 
         // Rename all other references of the variable, too
@@ -369,9 +294,10 @@ export class Module {
         });
         return this;
     }
-
-    // Returns an array of objects of {type, chunkId, moduleId, ast}, retreived by parting the AST and
-    // determining all the times that the `require` or `require.ensure` functions were invoked.
+    /**
+     * Returns an array of objects of {type, chunkId, moduleId, ast}, retrieved by parting the AST and
+     * determining all the times that the `require` or `require.ensure` functions were invoked.
+     */
     _findAllRequireFunctionCalls(): {
         type: "REQUIRE_FUNCTION" | "REQUIRE_ENSURE" | "REQUIRE_T";
         chunkId: string;
@@ -471,16 +397,16 @@ export class Module {
             .filter((i) => i !== null);
     }
 
-    get _absolutePath() {
+    get _absolutePath(): string {
         return path.join("/", path.normalize(this.path));
     }
 
-    resolve(p) {
+    resolve(p: string): string {
         if (!this.path) {
             throw new Error("In order to use module.resolve, please first define module.path.");
         }
 
-        function addExtension(p) {
+        function addExtension(p: string) {
             if (!p.endsWith(".js")) {
                 return `${p}.js`;
             } else {
@@ -506,33 +432,28 @@ export class Module {
         }
     }
 
-    async write(opts = undefined) {
+    async write(opts?: Parameters<Module["code"]>[0]) {
         let filePath = this.absolutePath;
 
-        await mkdirp(path.dirname(filePath));
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
 
         await fs.promises.writeFile(filePath, this.code(opts));
     }
 
     // When called, rename this module's path to be `node_modules/packageName`, and
     // then move all dependant packages inside this package, too.
-    get packageName() {
+    get packageName(): string {
         return this._packageName;
     }
-    set packageName(packageName) {
+    set packageName(packageName: string) {
         this._packageName = packageName;
-        function recursivelyApplyPathPrefix(mod) {
+        function recursivelyApplyPathPrefix(mod: Module) {
             mod.path = `node_modules/${packageName}/${mod.path}`;
-
-            for (const [id, dependant] of mod.dependencies) {
+            for (const [, dependant] of mod.dependencies) {
                 recursivelyApplyPathPrefix(dependant);
             }
         }
-
         recursivelyApplyPathPrefix(this);
-
         this.path = `node_modules/${packageName}/index.js`;
     }
 }
-
-module.exports = Module;

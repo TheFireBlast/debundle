@@ -1,14 +1,16 @@
-import acorn from "acorn";
-import escodegen from "escodegen";
-import type { Bundle } from "./subcomponents/Bundle";
+import * as acorn from "acorn";
+import { generate } from "./subcomponents/astring-jsx";
 import * as ESTree from "estree";
+import * as cliHighlight from "cli-highlight";
 
-const cliHighlight = require("cli-highlight").highlight;
-export function highlight(code: string) {
-    cliHighlight(code, {
-        language: "javascript",
+import type { Bundle } from "./subcomponents/Bundle";
+import { Module } from "./subcomponents/Module";
+
+export function highlight(code: string, language = "javascript") {
+    return cliHighlight.highlight(code, {
+        language,
         ignoreIllegals: true,
-        theme: { "title.function": "red" },
+        theme: { function: () => "red" },
     });
 }
 
@@ -27,8 +29,8 @@ export class ExtendedError extends Error {
 }
 
 export function cloneAst(ast: ESTree.Node) {
-    //@ts-ignore
-    return acorn.parse("var a = " + escodegen.generate(ast), {}).body[0].declarations[0].init;
+    //TODO: optimize
+    return (acorn.parse("var a = " + generate(ast), { ecmaVersion: 2020 }) as any).body[0].declarations[0].init;
 }
 
 export function parseBundleModules(node: ESTree.Node, bundle: Bundle, isChunk = false) {
@@ -54,5 +56,25 @@ export function parseBundleModules(node: ESTree.Node, bundle: Bundle, isChunk = 
             `in the ${bundle.metadataFilePath} file that was created. For more information, see [INSERT LINK HERE].`,
             { foo: true }
         );
+    }
+}
+
+export function oxford(arr: string[], conjunction: string = "and", ifempty: string = "") {
+    let l = arr.length;
+    if (!l) return ifempty;
+    if (l < 2) return arr[0];
+    if (l < 3) return arr.join(` ${conjunction} `);
+    arr = arr.slice();
+    arr[l - 1] = `${conjunction} ${arr[l - 1]}`;
+    return arr.join(", ");
+}
+
+export function assertType<T extends string>(type: string, expected: T | T[], print?: ESTree.Node, module?: Module): asserts type is T {
+    expected = [expected].flat(3) as T[];
+    if (!expected.includes(type as T)) {
+        var info = ''
+        if (print) info = `${highlight(generate(print)).replace(/^/g,'  ')}`;
+        if (module) info = `at ${module.path} (${module.id})\n${info}`;
+        throw new ExtendedError(`Expected ${oxford(expected, "or", "nothing")}, got ${type} instead`,info);
     }
 }

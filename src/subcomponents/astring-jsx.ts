@@ -1,29 +1,35 @@
-/* https://github.com/Qard/astring-jsx */
+/* Generator from https://github.com/Qard/astring-jsx */
 
-const astring = require("astring");
+import * as astring from "astring";
+import type { JSXNodes, AllNodes } from "./JSXTypes";
 
-module.exports.JSXGenerator = Object.assign({}, astring.GENERATOR, {
+export type JSXOnlyGeneratorType = {
+    [T in JSXNodes["type"]]: (node: JSXNodes & { type: T }, state: astring.State) => void;
+};
+export type JSXGeneratorType = {
+    [T in AllNodes["type"]]: (node: AllNodes & { type: T }, state: astring.State) => void;
+};
+
+export const JSXGenerator: JSXGeneratorType = Object.assign({}, astring.GENERATOR, <JSXOnlyGeneratorType>{
     // <div></div>
     JSXElement: function JSXElement(node, state) {
-        var output = state.output;
-        output.write("<");
+        state.write("<");
         this[node.openingElement.type](node.openingElement, state);
         if (node.closingElement) {
-            output.write(">");
+            state.write(">");
             for (var i = 0; i < node.children.length; i++) {
                 var child = node.children[i];
                 this[child.type](child, state);
             }
-            output.write("</");
+            state.write("</");
             this[node.closingElement.type](node.closingElement, state);
-            output.write(">");
+            state.write(">");
         } else {
-            output.write(" />");
+            state.write(" />");
         }
     },
     // <div>
     JSXOpeningElement: function JSXOpeningElement(node, state) {
-        var output = state.output;
         this[node.name.type](node.name, state);
         for (var i = 0; i < node.attributes.length; i++) {
             var attr = node.attributes[i];
@@ -32,41 +38,44 @@ module.exports.JSXGenerator = Object.assign({}, astring.GENERATOR, {
     },
     // </div>
     JSXClosingElement: function JSXOpeningElement(node, state) {
-        var output = state.output;
         this[node.name.type](node.name, state);
     },
     // div
     JSXIdentifier: function JSXOpeningElement(node, state) {
-        var output = state.output;
-        output.write(node.name);
+        state.write(node.name);
     },
     // Member.Expression
     JSXMemberExpression: function JSXMemberExpression(node, state) {
-        var output = state.output;
         this[node.object.type](node.object, state);
-        output.write(".");
+        state.write(".");
         this[node.property.type](node.property, state);
     },
     // attr="something"
     JSXAttribute: function JSXAttribute(node, state) {
-        var output = state.output;
-        output.write(" ");
+        state.write(" ");
         this[node.name.type](node.name, state);
-        output.write("=");
+        state.write("=");
         this[node.value.type](node.value, state);
     },
     // namespaced:attr="something"
     JSXNamespacedName: function JSXNamespacedName(node, state) {
-        var output = state.output;
         this[node.namespace.type](node.namespace, state);
-        output.write(":");
+        state.write(":");
         this[node.name.type](node.name, state);
     },
     // {expression}
     JSXExpressionContainer: function JSXExpressionContainer(node, state) {
-        var output = state.output;
-        output.write("{");
+        state.write("{");
         this[node.expression.type](node.expression, state);
-        output.write("}");
+        state.write("}");
     },
 });
+
+export function generate(node: astring.Node, options?: astring.Options<null>) {
+    return astring.generate(
+        node,
+        Object.assign({}, options, {
+            generator: JSXGenerator,
+        })
+    );
+}

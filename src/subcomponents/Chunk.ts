@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 import acorn from "acorn";
-import estraverse from "estraverse";
+import * as estraverse from "estraverse";
 import * as ESTree from "estree";
 import type {} from "./estree-override";
 
@@ -20,7 +20,7 @@ export class Chunk {
     ids: string[];
     ast: ESTree.Node;
     modules: Map<number, Module>;
-    constructor(bundle: Bundle, fileName: string, bundleModules?:any) {
+    constructor(bundle: Bundle, fileName: string, bundleModules?: any) {
         this.bundle = bundle;
 
         this.fileName = fileName;
@@ -52,7 +52,7 @@ export class Chunk {
             }
             this.bundle.log(`      read successfully!`);
             //@ts-ignore
-            this.ast = acorn.parse(chunkContents, {});
+            this.ast = acorn.parse(chunkContents, { ecmaVersion: 2020 });
 
             // Add `_parent` property to every node, so that the parent can be
             // determined in later code.
@@ -79,9 +79,7 @@ export class Chunk {
                     }
 
                     const parentElements =
-                        parent && parent.type === "CallExpression"
-                            ? parent.arguments
-                            : (parent as ESTree.ArrayExpression).elements;
+                        parent && parent.type === "CallExpression" ? parent.arguments : (parent as ESTree.ArrayExpression).elements;
                     const moduleListAst =
                         parentElements &&
                         parentElements.length >= 2 &&

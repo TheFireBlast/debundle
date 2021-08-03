@@ -1,9 +1,10 @@
 import fs from "fs";
 import path from "path";
 
-import acorn from "acorn";
-import estraverse from "estraverse";
-import escodegen from "escodegen";
+import * as acorn from "acorn";
+import * as estraverse from "estraverse";
+// import escodegen from "escodegen";
+import { generate } from "./astring-jsx";
 import * as ESTree from "estree";
 import type {} from "./estree-override";
 
@@ -23,7 +24,7 @@ export interface BundleMetadata {
     version: number;
     options: {
         [index: string]: any;
-        distPath?: string;
+        outPath?: string;
         chunkFileNameSuffix?: string;
         publicPathPrefix?: string;
         chunkHttpRequestOptions?: any;
@@ -39,10 +40,10 @@ export class Bundle {
     chunks: Map<string, Chunk>;
     logIndentLevel: number;
     ast!: ESTree.Program;
-    webpackBootstrap: any;
+    webpackBootstrap: WebpackBootstrap;
     moduleTree!: unknown[];
 
-    distPath!: string;
+    outPath!: string;
     chunkFileNameSuffix!: string;
     publicPathPrefix!: string;
     chunkHttpRequestOptions!: unknown;
@@ -91,13 +92,13 @@ export class Bundle {
     logDedent() {
         this.logIndentLevel -= 1;
     }
-    log(...args: any[]) {
+    log = (...args: any[]) => {
         let indent = "";
         for (let i = 0; i < this.logIndentLevel; i += 1) {
             indent += "  ";
         }
         console.log(`[LOG]${indent}`, ...args);
-    }
+    };
 
     get [Symbol.toStringTag]() {
         return `bundle ${this.path}: ${this.chunks.size} chunks, ${Object.keys(this.modules).length} modules`;
@@ -113,14 +114,14 @@ export class Bundle {
         }
 
         //@ts-ignore
-        this.ast = acorn.parse(bundleContents, {});
+        this.ast = acorn.parse(bundleContents, { ecmaVersion: 2020 });
 
         // Add `_parent` property to every node, so that the parent can be
         // determined in later code.
         estraverse.traverse(this.ast, {
             fallback: "iteration",
             enter: function (node, parent) {
-                node._parent = parent as ESTree.Node;
+                node._parent = parent;
             },
         });
 
@@ -128,7 +129,7 @@ export class Bundle {
 
         // Get a path to the location within the bundle where the module list occurs.
         // Should return a list of `FunctionExpression` ast nodes.
-        const webpackBootstrapParent = this.webpackBootstrap.ast._parent;
+        const webpackBootstrapParent = this.webpackBootstrap.ast._parent as ESTree.CallExpression;
         const bundleModules = parseBundleModules(webpackBootstrapParent.arguments[0], this);
         this.log(`Found ${Object.keys(bundleModules).length} modules in main bundle`);
         this.addChunk(DEFAULT_CHUNK, bundleModules);
@@ -146,13 +147,13 @@ export class Bundle {
     }
 
     async writeAll() {
-        this.log(`Writing all modules to ${this.distPath}...`);
+        this.log(`Writing all modules to ${this.outPath}...`);
         const promises: Promise<void>[] = [];
         for (const [key, value] of this.modules) {
             promises.push(value.write());
         }
         await Promise.all(promises);
-        this.log(`Finished writing all modules to ${this.distPath}: wrote ${this.modules.size} files.`);
+        this.log(`Finished writing all modules to ${this.outPath}: wrote ${this.modules.size} files.`);
     }
 
     get modules(): Map<number, Module> {
@@ -260,7 +261,7 @@ export class Bundle {
                 if (isWebpackBootstrap) {
                     log(`Found webpackBootstrap!`);
                     webpackBootstrap = node as ESTree.FunctionExpression;
-                    log(`webpackBootstrap module call expression: ${highlight(escodegen.generate(requireFunction))}`);
+                    log(`webpackBootstrap module call expression: ${highlight(generate(requireFunction))}`);
                     webpackBoostrapModuleCallNode = requireFunction;
                     this.break();
                 }
@@ -286,8 +287,8 @@ export class Bundle {
         return this.webpackBootstrap;
     }
 
-    moduleClosureParamMetadata(...args: undefined[]) {
-        return this.webpackBootstrap.moduleClosureParamMetadata(...args);
+    moduleClosureParamMetadata() {
+        return this.webpackBootstrap.moduleClosureParamMetadata();
     }
 
     //TODO: add types
