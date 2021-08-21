@@ -1,23 +1,25 @@
 import { Bundle } from "./subcomponents/Bundle";
-import program from "commander";
+import { Command } from "commander";
 
-let bundlePath!: string;
-program
-    .version(require("../package.json").version)
-    .option("--verbose", "output extra debugging information")
+var bundlePath!: string;
+var program = new Command();
+const options = program
+    .name("debundle")
+    .version(require("../package.json").version, "-v, --version")
+    .option("-V, --verbose", "output extra debugging information") //TODO
     .arguments("<bundle>")
     .action((b) => {
         bundlePath = b;
-    });
+    })
+    .parse(process.argv)
+    .opts();
 
-program.parse(process.argv);
-
-if (!bundlePath) {
+if (bundlePath) {
+    const bundle = new Bundle(bundlePath);
+    bundle.parse();
+    bundle.writeAll();
+} else {
     console.error("Error: the path to a javascript bundle is required.");
     console.error("ie: debundle ./path/to/javascript/bundle.js");
     process.exit(1);
 }
-
-const bundle = new Bundle(bundlePath);
-bundle.parse();
-bundle.writeAll();
