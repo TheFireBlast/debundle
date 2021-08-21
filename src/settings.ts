@@ -1,4 +1,4 @@
-import { BundleMetadata } from "./subcomponents/Bundle";
+import type { BundleMetadata } from "./subcomponents/Bundle";
 
 export const DEFAULT_CHUNK = "default";
 
