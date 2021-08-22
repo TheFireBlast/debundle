@@ -57,6 +57,12 @@ export const JSXGenerator: JSXGeneratorType = Object.assign({}, astring.GENERATO
         state.write("=");
         this[node.value.type](node.value, state);
     },
+    // {...attrList}
+    JSXSpreadAttribute: function JSXSpreadAttribute(node, state) {
+        state.write(" {...");
+        this[node.argument.type](node.argument, state);
+        state.write("}");
+    },
     // namespaced:attr="something"
     JSXNamespacedName: function JSXNamespacedName(node, state) {
         this[node.namespace.type](node.namespace, state);

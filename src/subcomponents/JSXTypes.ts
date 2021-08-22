@@ -33,9 +33,9 @@ export interface JSXAttribute extends BaseNode {
     name: JSXIdentifier | JSXNamespacedName;
     value: Literal | JSXExpressionContainer | JSXElement | /*JSXFragment | */ null;
 }
-// export interface JSXSpreadAttribute extends Omit<SpreadElement, 'type'> {
-//     type: "JSXSpreadAttribute";
-// }
+export interface JSXSpreadAttribute extends Omit<SpreadElement, 'type'> {
+    type: "JSXSpreadAttribute";
+}
 export interface JSXText extends BaseNode {
     type: "JSXText";
     value: string;
@@ -65,6 +65,7 @@ export type JSXNodes =
     | JSXIdentifier
     | JSXMemberExpression
     | JSXAttribute
+    | JSXSpreadAttribute
     | JSXNamespacedName
     | JSXExpressionContainer;
 export type AllNodes = Node | JSXNodes;

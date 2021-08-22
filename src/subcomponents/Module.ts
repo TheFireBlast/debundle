@@ -8,11 +8,11 @@ import chalk from "chalk";
 import * as ESTree from "estree";
 import type {} from "./estree-override";
 
-import { cloneAst, highlight } from "../utils";
+import { assertType, cloneAst, highlight } from "../utils";
 import { DEFAULT_CHUNK } from "../settings";
 import { Bundle } from "./Bundle";
 import { Chunk } from "./Chunk";
-import { JSXVisitor } from "./JSXVisitor";
+import { JSXVisitor, setCurrentModule } from "./JSXVisitor";
 
 // Thrown when a require function is encountered with multiple arguments
 export class RequireFunctionHasMultipleArgumentsError extends Error {}
@@ -118,35 +118,43 @@ export class Module {
             this._dependencyModuleIds.filter((a) => a.moduleId !== null).map(({ moduleId }) => [moduleId, this.bundle.getModule(moduleId)])
         );
     }
+    getVariable(node: ESTree.VariableDeclarator | ESTree.Identifier) {
+        var identifier: ESTree.Identifier;
+        if (node.type == "VariableDeclarator") {
+            assertType(node.id.type, "Identifier", node._parent, this);
+            identifier = node.id;
+        } else identifier = node;
+        // Find nearest scope node
+        var body: any = node;
+        while (!body.type.includes("Function") && body.type != "Program") {
+            body = body._parent;
+        }
+        var scope = this.scopeManager.acquire(body);
+        // Find variable
+        var result = scope.variables.find((v) => v.name == identifier.name);
+        while (!result && scope != scope.upper) {
+            scope = scope.upper;
+            result = scope.variables.find((v) => v.name == identifier.name);
+        }
+        return result;
+    }
+    renameDeclarator(declarator: ESTree.VariableDeclarator, name: string) {
+        if (declarator.id.type != "Identifier" || declarator.id.name == name) return;
+        var variable = this.getVariable(declarator);
+        if (variable) return this.renameVariable(variable, name);
+        console.error("Failed to rename %s to %s (%d)", declarator.id.name, name, this.path);
+    }
 
     code(opts = { renameVariables: true, removeClosure: true }) {
         const originalAst = cloneAst(this.ast);
 
         if (opts.renameVariables) {
-            var getVariable = (declarator: ESTree.VariableDeclarator) => {
-                var scope = this.scopeManager.acquire(declarator);
-                if (!scope) {
-                    var body: any = declarator;
-                    while (!body.type.includes("Function")) {
-                        body = body._parent;
-                    }
-                    scope = this.scopeManager.acquire(body);
-                }
-                return scope && scope.variables.find((v) => v.name === (declarator.id as ESTree.Identifier).name);
-            };
-            var renameDeclarator = (declarator: ESTree.VariableDeclarator, name: string) => {
-                if (declarator.id.type != "Identifier" || declarator.id.name == name) return;
-                var variable = getVariable(declarator);
-                if (variable) return this.renameVariable(variable, name);
-                console.error("Failed to rename %s to %s (%d)", declarator.id.name, name, this.path);
-            };
-
             // Remap variable names
             for (let mapping of this.mappings) {
                 let dec: any = this.ast.body;
                 let varpath = mapping[0].split(".").map((n) => (isNaN(+n) ? n : +n));
                 for (let n of varpath) dec = dec[n];
-                renameDeclarator(dec, mapping[1]);
+                this.renameDeclarator(dec, mapping[1]);
             }
 
             if (this.requireVariable) {
@@ -163,7 +171,7 @@ export class Module {
                             dec.init.left.right.type == "MemberExpression" &&
                             dec.init.left.right.property.type == "Identifier"
                         ) {
-                            renameDeclarator(dec, dec.init.left.right.property.name);
+                            this.renameDeclarator(dec, dec.init.left.right.property.name);
                             isUtils = true;
                         }
                     }
@@ -194,11 +202,11 @@ export class Module {
                             } else if (debug) console.log("assignment.left =", node.left);
                         } else if (node.type == "VariableDeclarator") {
                             // assignment.id.name = requiredModule.importName;
-                            renameDeclarator(node, requiredModule.importName);
+                            this.renameDeclarator(node, requiredModule.importName);
                         } else if (node.type == "CallExpression") {
                             // assignment.id.name = requiredModule.importName;
                             if (node._parent.type == "VariableDeclarator") {
-                                renameDeclarator(node._parent, requiredModule.importName);
+                                this.renameDeclarator(node._parent, requiredModule.importName);
                                 // if(this.id ==646)console.log('CallExpression',node)
                             } else if (debug) console.log("CallExpression =", node);
                         } else if (debug) console.log("assignment =", node);
@@ -220,6 +228,7 @@ export class Module {
                     if (requiredModule.id === this.bundle.jsx) {
                         let node = call.ast._parent._parent;
                         if (node.type == "VariableDeclarator") {
+                            setCurrentModule(this);
                             estraverse.replace(this.ast, JSXVisitor);
                         }
                     }

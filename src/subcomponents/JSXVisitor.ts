@@ -1,8 +1,9 @@
 import * as estraverse from "estraverse";
 import { generate } from "./astring-jsx";
-import * as ESTree from "estree";
+import type * as ESTree from "estree";
 import type {} from "./estree-override";
 import * as jsxKeys from "estraverse-fb/keys";
+import type { JSXSpreadAttributeKind } from "ast-types/gen/kinds";
 
 import { Module } from "./Module";
 import { assertType } from "../utils";
@@ -12,7 +13,7 @@ export function isJsxCall(node: ESTree.Node): node is ESTree.SimpleCallExpressio
         node.type == "CallExpression" &&
         node.callee.type == "MemberExpression" &&
         node.callee.property.type == "Identifier" &&
-        node.callee.property.name == "jsx"
+        (node.callee.property.name == "jsx" || node.callee.property.name == "jsxs")
     );
 }
 
@@ -44,21 +45,28 @@ export const JSXVisitor: estraverse.Visitor = {
 
             var attrNode: ESTree.Node;
             if (args[1].type == "CallExpression" && args[1].callee.type == "Identifier" && args[1].callee.name == "__assign") {
-                let result = { type: "ObjectExpression", properties: [] };
+                let result = { type: "ObjectExpression", properties: [] } as ESTree.ObjectExpression;
                 let _props = new Map();
                 for (let obj of args[1].arguments) {
-                    assertType(obj.type, "ObjectExpression", args[1], currentModule);
-                    for (let obj_prop of obj.properties) {
-                        assertType(obj_prop.type, "Property", obj);
-                        assertType(obj_prop.key.type, ["Identifier", "Literal"], obj);
-                        if (obj_prop.key.type == "Identifier") _props.set(obj_prop.key.name, obj_prop);
-                        else _props.set(obj_prop.key.value, obj_prop);
+                    assertType(obj.type, ["ObjectExpression", "Identifier"], args[1], currentModule);
+                    if (obj.type == "Identifier") {
+                        jsxElement.openingElement.attributes.push({
+                            type: "JSXSpreadAttribute",
+                            argument: obj,
+                        } as JSXSpreadAttributeKind);
                     }
+                    if (obj.type == "ObjectExpression")
+                        for (let obj_prop of obj.properties) {
+                            assertType(obj_prop.type, "Property", obj);
+                            assertType(obj_prop.key.type, ["Identifier", "Literal"], obj);
+                            if (obj_prop.key.type == "Identifier") _props.set(obj_prop.key.name, obj_prop);
+                            else _props.set(obj_prop.key.value, obj_prop);
+                        }
                 }
                 for (let p of _props.values()) {
                     result.properties.push(p);
                 }
-                attrNode = result as ESTree.Node;
+                attrNode = result;
             } else attrNode = args[1];
             if (attrNode.type == "ObjectExpression") {
                 estraverse.replace(attrNode, JSXVisitor);
@@ -66,7 +74,11 @@ export const JSXVisitor: estraverse.Visitor = {
                     if (p.type != "Property" || p.key.type != "Identifier") continue;
                     if (p.key.name == "children") {
                         if (p.value.type == "ArrayExpression") jsxElement.children = p.value.elements;
-                        else jsxElement.children.push(p.value);
+                        else
+                            jsxElement.children.push({
+                                type: "JSXExpressionContainer",
+                                expression: p.value,
+                            });
                         // //@ts-ignore
                         // if (p.value.type != "ArrayExpression") {
                         //     //@ts-ignore
