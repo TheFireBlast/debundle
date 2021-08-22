@@ -74,11 +74,16 @@ export const JSXVisitor: estraverse.Visitor = {
                     if (p.type != "Property" || p.key.type != "Identifier") continue;
                     if (p.key.name == "children") {
                         if (p.value.type == "ArrayExpression") jsxElement.children = p.value.elements;
-                        else
-                            jsxElement.children.push({
-                                type: "JSXExpressionContainer",
-                                expression: p.value,
-                            });
+                        else {
+                            if (p.value.type.startsWith("JSX")) {
+                                jsxElement.children.push(p.value);
+                            } else {
+                                jsxElement.children.push({
+                                    type: "JSXExpressionContainer",
+                                    expression: p.value,
+                                });
+                            }
+                        }
                         // //@ts-ignore
                         // if (p.value.type != "ArrayExpression") {
                         //     //@ts-ignore
@@ -99,13 +104,16 @@ export const JSXVisitor: estraverse.Visitor = {
                             type: "JSXIdentifier",
                             name: p.key.name,
                         },
-                        value: {
-                            type: "JSXExpressionContainer",
-                            expression: null,
-                        },
+                        value: null,
                     };
-
-                    attr.value.expression = p.value;
+                    if (p.value.type == "Literal" && (p.value.raw[0] == "'" || p.value.raw[0] == '"')) {
+                        attr.value = p.value;
+                    } else {
+                        attr.value = {
+                            type: "JSXExpressionContainer",
+                            expression: p.value,
+                        };
+                    }
                     jsxElement.openingElement.attributes.push(attr);
                 }
             }
