@@ -54,8 +54,10 @@ export const JSXGenerator: JSXGeneratorType = Object.assign({}, astring.GENERATO
     JSXAttribute: function JSXAttribute(node, state) {
         state.write(" ");
         this[node.name.type](node.name, state);
-        state.write("=");
-        this[node.value.type](node.value, state);
+        if (node.value) {
+            state.write("=");
+            this[node.value.type](node.value, state);
+        }
     },
     // {...attrList}
     JSXSpreadAttribute: function JSXSpreadAttribute(node, state) {
