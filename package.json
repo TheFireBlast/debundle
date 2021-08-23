@@ -4,7 +4,12 @@
   "description": "Javascript bundle decompiler",
   "main": "dist/index.js",
   "bin": {
-    "debundle": "bin/debundle"
+    "debundle": "./dist/cli.js"
+  },
+  "scripts": {
+    "cli": "ts-node --transpile-only src/cli.ts",
+    "clean": "rm -rf dist out",
+    "build": "tsc"
   },
   "repository": "https://github.com/TheFireBlast/debundle",
   "author": "FireBlast",

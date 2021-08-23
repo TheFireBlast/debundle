@@ -1,9 +1,10 @@
+#!/usr/bin/env node
 import { Bundle } from "./subcomponents/Bundle";
 import { Command } from "commander";
 
 var bundlePath!: string;
 var program = new Command();
-const options = program
+global.debundleOptions = program
     .name("debundle")
     .version(require("../package.json").version, "-v, --version")
     .option("-V, --verbose", "output extra debugging information") //TODO
