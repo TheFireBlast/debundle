@@ -50,9 +50,17 @@ export const JSXVisitor: estraverse.Visitor = {
 
             // ObjectExpression containing the JSXElement's attributes
             var attrNode: ESTree.Node;
-            //TODO: support Object.assign for ES6+
             // If the node is an `Object.assign` call, then the objects are merged
-            if (args[1].type == "CallExpression" && args[1].callee.type == "Identifier" && args[1].callee.name == "__assign") {
+            if (
+                //prettier-ignore
+                args[1].type == "CallExpression" && (
+                (
+                    args[1].callee.type == "MemberExpression" &&
+                    args[1].callee.object['name'] == "Object" &&
+                    args[1].callee.property['name'] == "assign"
+                ) ||
+                (args[1].callee.type == "Identifier" && args[1].callee.name == "__assign")) // Typescript helper
+            ) {
                 let result = { type: "ObjectExpression", properties: [] } as ESTree.ObjectExpression;
                 let _props: Map<string, ESTree.Property> = new Map();
                 for (let obj of args[1].arguments) {
